@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transport Cost Calculator</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .transport-system {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .action-buttons button {
+            padding: 8px 15px;
+            margin-left: 10px;
+            background: #0078d4;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        
+        .step-indicator {
+            display: flex;
+            margin-bottom: 20px;
+            background: #f0f0f0;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        
+        .step {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            background: #e0e0e0;
+        }
+        
+        .step.active {
+            background: #0078d4;
+            color: white;
+        }
+        
+        #map {
+            height: 500px;
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        
+        .selection-section {
+            margin-bottom: 20px;
+        }
+        
+        .selection-mode, .ferry-selection, .search-box {
+            margin-bottom: 15px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 5px;
+        }
+        
+        .search-input {
+            display: flex;
+            margin-top: 10px;
+        }
+        
+        .search-input input {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 3px 0 0 3px;
+        }
+        
+        .search-input button {
+            padding: 8px 15px;
+            background: #0078d4;
+            color: white;
+            border: none;
+            border-radius: 0 3px 3px 0;
+            cursor: pointer;
+        }
+        
+        .results-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .route, .total-box {
+            flex: 1;
+            min-width: 300px;
+            padding: 15px;
+            background: white;
+            border-radius: 5px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .total-box {
+            background: #2b579a;
+            color: white;
+        }
+        
+        .total-box h2 {
+            color: white;
+            margin-top: 0;
+        }
+        
+        .calculation {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 3px;
+        }
+        
+        @media (max-width: 768px) {
+            .control-panel {
+                flex-direction: column;
+            }
+            
+            .route, .total-box {
+                min-width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="transport-system">
+        <div class="header">
+            <h1>Transport Cost Calculation System</h1>
+            <div class="action-buttons">
+                <button onclick="resetMap()">Reset All</button>
+                <button onclick="generatePDF()">Download PDF</button>
+            </div>
+        </div>
+        
+        <div class="step-indicator">
+            <div id="step1" class="step">1. Collection</div>
+            <div id="step2" class="step">2. Ferry</div>
+            <div id="step3" class="step">3. Delivery</div>
+        </div>
+
+        <div class="control-panel">
+            <div class="selection-section">
+                <div class="selection-mode">
+                    <h3>Selection Mode:</h3>
+                    <div class="mode-options">
+                        <button id="address-mode-btn" onclick="setSelectionMode('address')">Address Search</button>
+                        <button id="map-mode-btn" onclick="setSelectionMode('map')">Click on Map</button>
+                    </div>
+                </div>
+
+                <div class="ferry-selection">
+                    <h3>Select your Ferry:</h3>
+                    <select id="ferry-select">
+                        <option value="">-- Select Ferry --</option>
+                    </select>
+                </div>
+
+                <div class="search-box" id="address-search-box">
+                    <h3>Search for an address:</h3>
+                    <div class="search-input">
+                        <input type="text" id="search-input" placeholder="Ex: Paris, Lyon">
+                        <button onclick="searchAddress()">Search</button>
+                    </div>
+                    <div id="search-results"></div>
+                </div>
+
+                <div class="current-selection">
+                    <h3>Current Selection:</h3>
+                    <p><strong>Collection:</strong> <span id="current-collection">Not selected</span></p>
+                    <p><strong>Ferry:</strong> <span id="current-ferry">Not selected</span></p>
+                    <p><strong>Delivery:</strong> <span id="current-delivery">Not selected</span></p>
+                </div>
+            </div>
+
+            <div id="map"></div>
+        </div>
+
+        <div class="results-container">
+            <div class="route" id="route1">
+                <h2>Collection Route (Loading → Ferry departure)</h2>
+                <p><strong>From:</strong> <span id="from1">Not defined</span></p>
+                <p><strong>To:</strong> <span id="to1">Not defined</span></p>
+                <div class="calculation">
+                    <p>Driving distance: <span id="distance1">0 km</span></p>
+                    <p>Collection price (€2/km): <span id="collection-price">0 €</span></p>
+                    <p>Minimum €450 → Final price: <span id="final-collection">0 €</span></p>
+                </div>
+            </div>
+
+            <div class="route" id="route2">
+                <h2>Delivery Route (Ferry arrival → Delivery)</h2>
+                <p><strong>From:</strong> <span id="from2">Not defined</span></p>
+                <p><strong>To:</strong> <span id="to2">Not defined</span></p>
+                <div class="calculation">
+                    <p>Driving distance: <span id="distance2">0 km</span></p>
+                    <p>Delivery price (€3/km): <span id="delivery-price">0 €</span></p>
+                    <p>Minimum €300 → Final price: <span id="final-delivery">0 €</span></p>
+                </div>
+            </div>
+
+            <div class="additional-costs">
+                <div class="route">
+                    <h2>Additional Cost</h2>
+                    <div class="calculation">
+                        <p>Ferry: <span id="ferry-cost">0 €</span></p>
+                    </div>
+                </div>
+
+                <div class="route">
+                    <h2>Margin/Discount</h2>
+                    <div class="slider-container">
+                        <input type="range" id="margin-slider" min="-20" max="20" value="0" step="1">
+                        <span id="margin-value">0%</span>
+                    </div>
+                    <p>Application: <span id="margin-type">None</span> of <span id="margin-amount">0%</span></p>
+                </div>
+            </div>
+
+            <div class="total-box">
+                <h2>Total to Pay</h2>
+                <p>Collection: <span id="display-collection">0 €</span></p>
+                <p>Delivery: <span id="display-delivery">0 €</span></p>
+                <p>Ferry: <span id="display-ferry">0 €</span></p>
+                <p>Margin/Discount: <span id="display-margin">0 €</span></p>
+                <hr>
+                <p class="final-total"><strong>Final total: <span id="total-cost">0 €</span></strong></p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+    <script>
+        // Configuration de base
+        let map;
+        let markers = [];
+        let routingControl1, routingControl2;
+        let currentMargin = 0;
+
+        const CONFIG = {
+            collectionPricePerKm: 2,
+            collectionMinPrice: 450,
+            deliveryPricePerKm: 3,
+            deliveryMinPrice: 300,
+            ferryCost: 0
+        };
+
+        const selectionState = {
+            mode: 'map',
+            step: 1,
+            collectionStart: null,
+            ferryRoute: null,
+            deliveryEnd: null
+        };
+
+        // Ferry terminal coordinates (simplified)
+        const FERRY_TERMINALS = {
+            "Dublin Port": { lat: 53.347, lng: -6.227 },
+            "Zeebrugge Port Services": { lat: 51.331, lng: 3.207 },
+            "Cork": { lat: 51.847, lng: -8.297 },
+            "Holyhead": { lat: 53.309, lng: -4.633 },
+            "Birkenhead": { lat: 53.393, lng: -3.014 },
+            "Rosslare Harbour": { lat: 52.276, lng: -6.336 },
+            "Dunkirk": { lat: 51.034, lng: 2.376 }
+        };
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeTransportSystem();
+        });
+
+        // Main initialization function
+        function initializeTransportSystem() {
+            // Initialize map
+            map = L.map('map').setView([53.1424, -7.6921], 6); // Centered on Ireland
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap'
+            }).addTo(map);
+
+            // Load ferries from SharePoint data (simulated)
+            loadFerries();
+
+            // Setup margin slider
+            const marginSlider = document.getElementById('margin-slider');
+            marginSlider.addEventListener('input', function() {
+                currentMargin = parseInt(this.value);
+                document.getElementById('margin-value').textContent = `${currentMargin}%`;
+                document.getElementById('margin-amount').textContent = `${Math.abs(currentMargin)}%`;
+                document.getElementById('margin-type').textContent = 
+                    currentMargin > 0 ? "Discount" : currentMargin < 0 ? "Margin" : "None";
+                calculateTotal();
+            });
+
+            // Handle map clicks
+            map.on('click', async function(e) {
+                if (selectionState.mode !== 'map') return;
+                
+                const { lat, lng } = e.latlng;
+                const name = `Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+                
+                handleLocationSelection(lat, lng, name);
+            });
+
+            updateStepUI();
+        }
+
+        // Load ferries (simulated SharePoint data)
+        function loadFerries() {
+            // This would normally come from SharePoint API
+            const ferryData = [
+                { Title: "CLDN DUB-ZEE", From: "Dublin Port", To: "Zeebrugge Port Services", FreightCosts: "500" },
+                { Title: "CLDN DUB-LIV", From: "Dublin Port", To: "Birkenhead", FreightCosts: "350" },
+                { Title: "IRISH DUB-HLD", From: "Dublin Port", To: "Holyhead", FreightCosts: "200" },
+                { Title: "CLDN ORK-ZEE", From: "Cork", To: "Zeebrugge Port Services", FreightCosts: "350" }
+            ];
+
+            const select = document.getElementById('ferry-select');
+            ferryData.forEach(ferry => {
+                const option = new Option(
+                    `${ferry.From} → ${ferry.To} (${ferry.FreightCosts}€)`,
+                    `${ferry.FreightCosts},${ferry.From},${ferry.To}`
+                );
+                select.add(option);
+            });
+
+            select.addEventListener('change', function() {
+                if (this.value) {
+                    const [price, departure, arrival] = this.value.split(',');
+                    CONFIG.ferryCost = parseInt(price);
+                    selectionState.ferryRoute = { departure, arrival, price };
+                    updateCurrentSelection();
+                    document.getElementById('ferry-cost').textContent = `${price} €`;
+                    
+                    // Move to step 3
+                    selectionState.step = 3;
+                    updateStepUI();
+                    
+                    // If delivery is already selected, calculate routes
+                    if (selectionState.deliveryEnd) {
+                        calculateAllRoutes();
+                    }
+                }
+            });
+        }
+
+        // Handle location selection
+        function handleLocationSelection(lat, lng, name) {
+            if (selectionState.step === 1) {
+                // Step 1: Collection
+                selectionState.collectionStart = { lat, lng, name };
+                updateCurrentSelection();
+                addPoint(lat, lng, name, 'collection');
+                selectionState.step = 2;
+                updateStepUI();
+                document.getElementById('ferry-select').disabled = false;
+            } else if (selectionState.step === 3) {
+                // Step 3: Delivery
+                selectionState.deliveryEnd = { lat, lng, name };
+                updateCurrentSelection();
+                addPoint(lat, lng, name, 'delivery');
+                calculateAllRoutes();
+                selectionState.step = 4;
+                updateStepUI();
+            }
+        }
+
+        // Set selection mode
+        function setSelectionMode(mode) {
+            selectionState.mode = mode;
+            document.getElementById('address-mode-btn').classList.toggle('active', mode === 'address');
+            document.getElementById('map-mode-btn').classList.toggle('active', mode === 'map');
+            
+            if (mode === 'address') {
+                document.getElementById('address-search-box').style.display = 'block';
+            } else {
+                document.getElementById('address-search-box').style.display = 'none';
+            }
+        }
+
+        // Update UI step indicators
+        function updateStepUI() {
+            document.querySelectorAll('.step').forEach(step => {
+                step.classList.remove('active', 'completed');
+            });
+
+            for (let i = 1; i < selectionState.step; i++) {
+                const stepElement = document.getElementById(`step${i}`);
+                if (stepElement) stepElement.classList.add('completed');
+            }
+
+            const currentStep = document.getElementById(`step${selectionState.step}`);
+            if (currentStep) currentStep.classList.add('active');
+        }
+
+        // Update current selection display
+        function updateCurrentSelection() {
+            document.getElementById('current-collection').textContent = 
+                selectionState.collectionStart ? selectionState.collectionStart.name : 'Not selected';
+            
+            if (selectionState.ferryRoute) {
+                document.getElementById('current-ferry').textContent = 
+                    `${selectionState.ferryRoute.departure} → ${selectionState.ferryRoute.arrival} (${selectionState.ferryRoute.price}€)`;
+            } else {
+                document.getElementById('current-ferry').textContent = 'Not selected';
+            }
+            
+            document.getElementById('current-delivery').textContent = 
+                selectionState.deliveryEnd ? selectionState.deliveryEnd.name : 'Not selected';
+        }
+
+        // Add a point to the map
+        function addPoint(lat, lng, name, type) {
+            // Remove existing markers of the same type
+            markers.forEach(marker => {
+                if (marker.options.type === type) {
+                    map.removeLayer(marker);
+                }
+            });
+
+            let iconColor;
+            if (type === 'collection') iconColor = 'blue';
+            else if (type === 'delivery') iconColor = 'red';
+            else iconColor = 'green';
+
+            const marker = L.marker([lat, lng], {
+                icon: L.icon({
+                    iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-${iconColor}.png`,
+                    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+                    iconSize: [25, 41],
+                    type: type
+                })
+            }).bindPopup(`<b>${name}</b>`).addTo(map);
+            
+            markers.push(marker);
+        }
+
+        // Calculate routes
+        function calculateAllRoutes() {
+            if (!selectionState.collectionStart || !selectionState.ferryRoute || !selectionState.deliveryEnd) {
+                console.error("Missing route parameters");
+                return;
+            }
+
+            try {
+                // Remove old routes
+                if (routingControl1) map.removeControl(routingControl1);
+                if (routingControl2) map.removeControl(routingControl2);
+
+                const departureTerminal = FERRY_TERMINALS[selectionState.ferryRoute.departure];
+                const arrivalTerminal = FERRY_TERMINALS[selectionState.ferryRoute.arrival];
+
+                if (!departureTerminal || !arrivalTerminal) {
+                    alert("Could not find ferry terminal coordinates");
+                    return;
+                }
+
+                // 1. Collection Route (Loading → Ferry departure)
+                routingControl1 = L.Routing.control({
+                    waypoints: [
+                        L.latLng(selectionState.collectionStart.lat, selectionState.collectionStart.lng),
+                        L.latLng(departureTerminal.lat, departureTerminal.lng)
+                    ],
+                    routeWhileDragging: false,
+                    show: false,
+                    lineOptions: { styles: [{color: '#3498db', opacity: 0.7, weight: 5}] },
+                    addWaypoints: false,
+                    draggableWaypoints: false
+                }).addTo(map);
+
+                // 2. Delivery Route (Ferry arrival → Delivery)
+                routingControl2 = L.Routing.control({
+                    waypoints: [
+                        L.latLng(arrivalTerminal.lat, arrivalTerminal.lng),
+                        L.latLng(selectionState.deliveryEnd.lat, selectionState.deliveryEnd.lng)
+                    ],
+                    routeWhileDragging: false,
+                    show: false,
+                    lineOptions: { styles: [{color: '#e74c3c', opacity: 0.7, weight: 5}] },
+                    addWaypoints: false,
+                    draggableWaypoints: false
+                }).addTo(map);
+
+                // Listen for route results
+                routingControl1.on('routesfound', function(e) {
+                    const distance = (e.routes[0].summary.totalDistance / 1000).toFixed(1);
+                    updateRouteDisplay(distance, null);
+                });
+
+                routingControl2.on('routesfound', function(e) {
+                    const distance = (e.routes[0].summary.totalDistance / 1000).toFixed(1);
+                    updateRouteDisplay(null, distance);
+                });
+
+            } catch (error) {
+                console.error("Route calculation failed:", error);
+                alert("Route calculation failed. Please check your selections.");
+            }
+        }
+
+        // Update route display
+        function updateRouteDisplay(collectionDistance, deliveryDistance) {
+            if (collectionDistance !== null) {
+                document.getElementById('from1').textContent = selectionState.collectionStart.name;
+                document.getElementById('to1').textContent = selectionState.ferryRoute.departure + " (Ferry)";
+                document.getElementById('distance1').textContent = `${collectionDistance} km`;
+                
+                const collectionPrice = collectionDistance * CONFIG.collectionPricePerKm;
+                const finalCollection = Math.max(collectionPrice, CONFIG.collectionMinPrice);
+                document.getElementById('collection-price').textContent = `${collectionPrice.toFixed(2)} €`;
+                document.getElementById('final-collection').textContent = `${finalCollection.toFixed(2)} €`;
+                document.getElementById('display-collection').textContent = `${finalCollection.toFixed(2)} €`;
+            }
+
+            if (deliveryDistance !== null) {
+                document.getElementById('from2').textContent = selectionState.ferryRoute.arrival + " (Ferry)";
+                document.getElementById('to2').textContent = selectionState.deliveryEnd.name;
+                document.getElementById('distance2').textContent = `${deliveryDistance} km`;
+                
+                const deliveryPrice = deliveryDistance * CONFIG.deliveryPricePerKm;
+                const finalDelivery = Math.max(deliveryPrice, CONFIG.deliveryMinPrice);
+                document.getElementById('delivery-price').textContent = `${deliveryPrice.toFixed(2)} €`;
+                document.getElementById('final-delivery').textContent = `${finalDelivery.toFixed(2)} €`;
+                document.getElementById('display-delivery').textContent = `${finalDelivery.toFixed(2)} €`;
+            }
+
+            calculateTotal();
+        }
+
+        // Calculate the total cost
+        function calculateTotal() {
+            const collection = parseFloat(document.getElementById('display-collection').textContent) || 0;
+            const delivery = parseFloat(document.getElementById('display-delivery').textContent) || 0;
+            const ferry = CONFIG.ferryCost || 0;
+            const subtotal = collection + delivery + ferry;
+            
+            const marginAmount = (subtotal * currentMargin) / 100;
+            const total = subtotal - marginAmount;
+            
+            document.getElementById('display-margin').textContent = `${marginAmount.toFixed(2)} €`;
+            document.getElementById('total-cost').textContent = `${total.toFixed(2)} €`;
+            document.getElementById('display-ferry').textContent = `${ferry.toFixed(2)} €`;
+        }
+
+        // Reset the map
+        function resetMap() {
+            markers.forEach(marker => map.removeLayer(marker));
+            markers = [];
+            
+            if (routingControl1) map.removeControl(routingControl1);
+            if (routingControl2) map.removeControl(routingControl2);
+            
+            selectionState.step = 1;
+            selectionState.collectionStart = null;
+            selectionState.ferryRoute = null;
+            selectionState.deliveryEnd = null;
+            CONFIG.ferryCost = 0;
+            
+            updateStepUI();
+            updateCurrentSelection();
+            
+            document.getElementById('ferry-select').value = '';
+            document.getElementById('ferry-select').disabled = true;
+            
+            document.getElementById('distance1').textContent = '0 km';
+            document.getElementById('distance2').textContent = '0 km';
+            document.getElementById('collection-price').textContent = '0 €';
+            document.getElementById('final-collection').textContent = '0 €';
+            document.getElementById('delivery-price').textContent = '0 €';
+            document.getElementById('final-delivery').textContent = '0 €';
+            document.getElementById('display-collection').textContent = '0 €';
+            document.getElementById('display-delivery').textContent = '0 €';
+            document.getElementById('display-margin').textContent = '0 €';
+            document.getElementById('total-cost').textContent = '0 €';
+            document.getElementById('ferry-cost').textContent = '0 €';
+            document.getElementById('from1').textContent = 'Not defined';
+            document.getElementById('to1').textContent = 'Not defined';
+            document.getElementById('from2').textContent = 'Not defined';
+            document.getElementById('to2').textContent = 'Not defined';
+        }
+
+        // Generate PDF (simplified)
+        function generatePDF() {
+            alert("PDF generation would be implemented here");
+            // In a real implementation, you would use jsPDF as in your original code
+        }
+
+        // Make functions available globally
+        window.setSelectionMode = setSelectionMode;
+        window.resetMap = resetMap;
+        window.generatePDF = generatePDF;
+    </script>
+</body>
+</html>
